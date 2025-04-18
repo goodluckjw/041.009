@@ -6,6 +6,7 @@ import re
 OC = "chetera"
 BASE = "http://www.law.go.kr"
 
+
 def get_law_list_from_api(query):
     encoded_query = quote(query)
     page = 1
@@ -28,6 +29,7 @@ def get_law_list_from_api(query):
         page += 1
     return laws
 
+
 def get_law_text_by_mst(mst):
     url = f"{BASE}/DRF/lawService.do?OC={OC}&target=law&MST={mst}&type=XML"
     try:
@@ -37,13 +39,16 @@ def get_law_text_by_mst(mst):
     except:
         return None
 
+
 def clean(text):
     return re.sub(r"\s+", "", text or "")
+
 
 def highlight(text, keyword):
     if not text:
         return ""
     return text.replace(keyword, f"<span style='color:red'>{keyword}</span>")
+
 
 def get_highlighted_articles(mst, keyword):
     xml_data = get_law_text_by_mst(mst)
@@ -76,27 +81,30 @@ def get_highlighted_articles(mst, keyword):
                 호내용 = 호.findtext("호내용", "") or ""
                 if keyword_clean in clean(호내용):
                     조출력 = True
-                    호출력.append(f"&nbsp;&nbsp;{highlight(호내용, keyword)}")
+                    호출력.append(f"{highlight(호내용, keyword)}")
+
+                for 목 in 호.findall("목"):
+                    목내용 = 목.findtext("목내용", "") or ""
+                    if keyword_clean in clean(목내용):
+                        조출력 = True
+                        호출력.append(f"&nbsp;&nbsp;{highlight(목내용, keyword)}")
 
             for 목 in 항.findall("목"):
                 목내용 = 목.findtext("목내용", "") or ""
                 if keyword_clean in clean(목내용):
                     조출력 = True
-                    호출력.append(f"&nbsp;&nbsp;&nbsp;&nbsp;{highlight(목내용, keyword)}")
+                    호출력.append(f"&nbsp;&nbsp;{highlight(목내용, keyword)}")
 
             if keyword_clean in clean(항내용) or 호출력:
-                항출력.append(f"{항번호} {highlight(항내용, keyword)}<br>" + "<br>".join(호출력))
+                항출력.append(f"ⓞ{항번호} {highlight(항내용, keyword)}<br>" + "<br>".join(호출력))
 
         if 조출력 or 항출력:
             clean_title = f"제{조번호}조({조제목})"
+            output = f"{clean_title}"
             if not 항들:
-                output = f"{clean_title} {highlight(조내용, keyword)}"
+                output += f" {highlight(조내용, keyword)}"
             else:
-                output = f"{clean_title}"
-                if 항출력:
-                    first = 항출력[0]
-                    others = "<br>".join([f"&nbsp;&nbsp;{a}" for a in 항출력[1:]])
-                    output += f" {first}" + (f"<br>{others}" if others else "")
+                output += "<br>" + "<br>".join(항출력)
             results.append(output)
 
     return "<br><br>".join(results) if results else "🔍 해당 검색어를 포함한 조문이 없습니다."
