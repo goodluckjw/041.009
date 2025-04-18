@@ -7,8 +7,7 @@ OC = "chetera"
 BASE = "http://www.law.go.kr"
 
 def get_law_list_from_api(query):
-    exact_query = f'"{query}"'
-    encoded_query = quote(exact_query)
+    encoded_query = quote(query)
     page = 1
     laws = []
     while True:
@@ -30,5 +29,74 @@ def get_law_list_from_api(query):
     return laws
 
 def get_law_text_by_mst(mst):
-    url = f"{BASE}/DRF/lawService.do?OC={OC}&target=
+    url = f"{BASE}/DRF/lawService.do?OC={OC}&target=law&MST={mst}&type=XML"
+    try:
+        res = requests.get(url, timeout=10)
+        res.encoding = 'utf-8'
+        return res.content if res.status_code == 200 else None
+    except:
+        return None
 
+def clean(text):
+    return re.sub(r"\s+", "", text or "")
+
+def highlight(text, keyword):
+    if not text:
+        return ""
+    return text.replace(keyword, f"<span style='color:red'>{keyword}</span>")
+
+def get_highlighted_articles(mst, keyword):
+    xml_data = get_law_text_by_mst(mst)
+    if not xml_data:
+        return "⚠️ 본문을 불러올 수 없습니다."
+
+    tree = ET.fromstring(xml_data)
+    articles = tree.findall(".//조문단위")
+    keyword_clean = clean(keyword)
+    results = []
+
+    for article in articles:
+        조번호 = article.findtext("조문번호", "").strip()
+        조제목 = article.findtext("조문제목", "") or ""
+        조내용 = article.findtext("조문내용", "") or ""
+        항들 = article.findall("항")
+
+        조출력 = keyword_clean in clean(조제목) or keyword_clean in clean(조내용)
+        항출력 = []
+
+        for 항 in 항들:
+            항번호 = 항.findtext("항번호", "").strip()
+            항내용 = 항.findtext("항내용", "") or ""
+            호출력 = []
+
+            if keyword_clean in clean(항내용):
+                조출력 = True
+
+            for 호 in 항.findall("호"):
+                호내용 = 호.findtext("호내용", "") or ""
+                if keyword_clean in clean(호내용):
+                    조출력 = True
+                    호출력.append(f"&nbsp;&nbsp;{highlight(호내용, keyword)}")
+
+            for 목 in 항.findall("목"):
+                목내용 = 목.findtext("목내용", "") or ""
+                if keyword_clean in clean(목내용):
+                    조출력 = True
+                    호출력.append(f"&nbsp;&nbsp;&nbsp;&nbsp;{highlight(목내용, keyword)}")
+
+            if keyword_clean in clean(항내용) or 호출력:
+                항출력.append(f"{항번호} {highlight(항내용, keyword)}<br>" + "<br>".join(호출력))
+
+        if 조출력 or 항출력:
+            clean_title = f"제{조번호}조({조제목})"
+            if not 항들:
+                output = f"{clean_title} {highlight(조내용, keyword)}"
+            else:
+                output = f"{clean_title}"
+                if 항출력:
+                    first = 항출력[0]
+                    others = "<br>".join([f"&nbsp;&nbsp;{a}" for a in 항출력[1:]])
+                    output += f" {first}" + (f"<br>{others}" if others else "")
+            results.append(output)
+
+    return "<br><br>".join(results) if results else "🔍 해당 검색어를 포함한 조문이 없습니다."
